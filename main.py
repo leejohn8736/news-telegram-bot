@@ -1,8 +1,7 @@
 import os
 import sys
-import requests
 from bs4 import BeautifulSoup
-from curl_cffi import requests as cffi_requests
+from curl_cffi import requests
 
 # 깃허브 Secrets에서 텔레그램 토큰 및 채팅방 ID 가져오기
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
