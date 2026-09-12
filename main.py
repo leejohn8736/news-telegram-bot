@@ -12,10 +12,22 @@ from email.utils import parsedate_to_datetime
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-# 2. 감시할 키워드 목록 (10개)
-KEYWORDS = ["삼성전자", "AI", "반도체", "증권", "부동산", "금리", "주식", "현대차", "SK하이닉스", "배터리"]
+# 2. 순환 감시할 키워드 목록 (지정하신 순서)
+KEYWORDS = [
+    "삼성전자",
+    "AI",
+    "반도체",
+    "증권",
+    "부동산",
+    "금리",
+    "주식",
+    "현대차",
+    "SK하이닉스",
+    "배터리"
+]
 
 SENT_LINKS_FILE = "sent_links.txt"
+LAST_INDEX_FILE = "last_keyword_index.txt"  # 마지막 발송 키워드 순번 저장 파일
 
 def load_sent_links():
     if os.path.exists(SENT_LINKS_FILE):
@@ -27,6 +39,21 @@ def save_sent_links(sent_links):
     with open(SENT_LINKS_FILE, "w", encoding="utf-8") as f:
         for link in sent_links:
             f.write(f"{link}\n")
+
+def load_last_index():
+    """마지막으로 발송 성공했던 키워드 인덱스 불러오기"""
+    if os.path.exists(LAST_INDEX_FILE):
+        try:
+            with open(LAST_INDEX_FILE, "r", encoding="utf-8") as f:
+                return int(f.read().strip())
+        except ValueError:
+            return 0
+    return 0
+
+def save_last_index(index):
+    """마지막으로 발송 성공한 키워드 인덱스 저장하기"""
+    with open(LAST_INDEX_FILE, "w", encoding="utf-8") as f:
+        f.write(str(index))
 
 def send_telegram_msg(text):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -117,14 +144,18 @@ def fetch_rss_news(keyword):
     return articles
 
 def main():
-    print("🚀 당일 생성 뉴스 1건 한정 감시 로봇 실행...")
+    print("🚀 순환형 당일 뉴스 감시 로봇 실행...")
     sent_links = load_sent_links()
+    last_index = load_last_index()
+    total_keywords = len(KEYWORDS)
+    
     sent_in_this_run = False
     
-    for keyword in KEYWORDS:
-        if sent_in_this_run:
-            break
-            
+    # 마지막 발송한 다음 키워드부터 순서대로 검사 (순환 로직)
+    for i in range(1, total_keywords + 1):
+        target_index = (last_index + i) % total_keywords
+        keyword = KEYWORDS[target_index]
+        
         articles = fetch_rss_news(keyword)
         
         for article in articles:
@@ -148,10 +179,15 @@ def main():
             if send_telegram_msg(message):
                 sent_links.add(link)
                 save_sent_links(sent_links)
-                print(f"✅ 오늘 자 뉴스 발송 성공: {article['title']}")
+                # 발송 성공 시 해당 키워드 위치를 저장하여 다음 번에는 그다음 키워드로 넘어가도록 함
+                save_last_index(target_index)
+                print(f"✅ [{keyword}] 뉴스 발송 성공: {article['title']}")
                 sent_in_this_run = True
                 break
                 
+        if sent_in_this_run:
+            break
+            
     if not sent_in_this_run:
         print("ℹ️ 이번 스케줄에서는 조건에 맞는 새로운 '오늘 자' 뉴스가 없습니다.")
 
