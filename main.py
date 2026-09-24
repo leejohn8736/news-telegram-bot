@@ -40,14 +40,13 @@ prompt = f"""
 7. 글의 가장 마지막 줄에는 반드시 "출처 AI" 라고 적을 것.
 """
 
-# 4. 다중 모델 순차 시도 (503 과부하 대처용 Fallback 로직)
-candidate_models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+# 4. 최신 지원 모델 순차 호출 (gemini-3.6-flash 우선적용)
+candidate_models = ["gemini-3.6-flash", "gemini-3.0-flash"]
 briefing_text = None
 
 for model_name in candidate_models:
     print(f"[{model_name}] 모델로 브리핑 생성 시도 중...")
     
-    # 모델별 최대 3회 재시도
     for attempt in range(1, 4):
         try:
             response = client.models.generate_content(
@@ -60,13 +59,13 @@ for model_name in candidate_models:
         except Exception as e:
             print(f"[{model_name}] 시도 {attempt}/3 실패: {e}")
             if attempt < 3:
-                time.sleep(5)  # 5초 대기 후 재시도
+                time.sleep(3)
                 
     if briefing_text:
         break
 
 if not briefing_text:
-    print("[오류] 모든 모델에서 브리핑 생성이 실패했습니다.")
+    print("[오류] 모든 최신 모델에서 브리핑 생성이 실패했습니다.")
     sys.exit(1)
 
 # 5. 텔레그램 메시지 발송
