@@ -5,28 +5,27 @@ import datetime
 import requests
 from google import genai
 
-# 1. 환경 변수(GitHub Secrets) 검증
+# 1. 환경 변수 검증
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 if not all([GEMINI_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID]):
-    print("[오류] GitHub Secrets 값(GEMINI_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)이 설정되지 않았습니다.")
+    print("[오류] GitHub Secrets가 설정되지 않았습니다.")
     sys.exit(1)
 
-# 2. 한국 시간(KST) 기준 날짜 헤더 생성
-now_kst = datetime.datetime.utcnow() + datetime.timedelta(hours=9)
+# 2. 한국 시간 기준 날짜
+now_kst = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=9)
 today_str = now_kst.strftime("%Y년 %m월 %d일")
 weekday_map = {"Mon": "월", "Tue": "화", "Wed": "수", "Thu": "목", "Fri": "금", "Sat": "토", "Sun": "일"}
 weekday_str = weekday_map[now_kst.strftime("%a")]
 date_header = f"{today_str}({weekday_str})"
 
-# 3. Google GenAI Client 초기화
+# 3. Gemini 클라이언트
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 prompt = f"""
 오늘 날짜: {date_header}
-
 당일 증시 심층 분석 브리핑을 작성하라.
 
 [작성 규칙]
@@ -40,8 +39,8 @@ prompt = f"""
 7. 글의 가장 마지막 줄에는 반드시 "출처 AI" 라고 적을 것.
 """
 
-# 4. 최신 지원 모델 순차 호출 (gemini-3.6-flash 우선적용)
-candidate_models = ["gemini-3.6-flash", "gemini-3.0-flash"]
+# 4. 최신 모델 순차 호출
+candidate_models = ["gemini-3.8-flash", "gemini-3.6-flash"]
 briefing_text = None
 
 for model_name in candidate_models:
@@ -60,28 +59,46 @@ for model_name in candidate_models:
             print(f"[{model_name}] 시도 {attempt}/3 실패: {e}")
             if attempt < 3:
                 time.sleep(3)
-                
+    
     if briefing_text:
         break
 
 if not briefing_text:
-    print("[오류] 모든 최신 모델에서 브리핑 생성이 실패했습니다.")
+    print("[오류] 모든 모델에서 브리핑 생성이 실패했습니다.")
     sys.exit(1)
 
-# 5. 텔레그램 메시지 발송
-telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-payload = {
-    "chat_id": TELEGRAM_CHAT_ID,
-    "text": briefing_text
-}
+# 5. 텔레그램 발송 (4096자 제한 대응 - 자동 분할)
+def send_telegram_message(text: str):
+    telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    
+    # 4000자 단위로 분할 (안전하게)
+    max_len = 4000
+    chunks = [text[i:i+max_len] for i in range(0, len(text), max_len)]
+    
+    for i, chunk in enumerate(chunks, 1):
+        payload = {
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": chunk,
+            "disable_web_page_preview": True
+        }
+        
+        try:
+            res = requests.post(telegram_url, json=payload, timeout=30)
+            if res.status_code == 200:
+                print(f"텔레그램 메시지 {i}/{len(chunks)} 전송 완료")
+            else:
+                print(f"[텔레그램 발송 실패] 상태 코드: {res.status_code}, 응답: {res.text}")
+                return False
+        except Exception as e:
+            print(f"[텔레그램 요청 에러] {e}")
+            return False
+        
+        if i < len(chunks):
+            time.sleep(1)  # 연속 전송 시 약간의 딜레이
+            
+    return True
 
-try:
-    res = requests.post(telegram_url, json=payload)
-    if res.status_code == 200:
-        print("텔레그램 시황 브리핑 전송 완료!")
-    else:
-        print(f"[텔레그램 발송 실패] 상태 코드: {res.status_code}, 응답: {res.text}")
-        sys.exit(1)
-except Exception as e:
-    print(f"[텔레그램 요청 에러] {e}")
+if send_telegram_message(briefing_text):
+    print("텔레그램 시황 브리핑 전송 완료!")
+else:
     sys.exit(1)
