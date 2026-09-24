@@ -1,41 +1,30 @@
-name: Realtime News Notification Bot
+name: Daily Stock Briefing Bot
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: '*/20 * * * *'  # 20분마다 실행 (시간당 3회)
+    # 매일 한국 시간(KST) 오전 7:15 실행 (UTC 22:15)
+    - cron: '15 22 * * *'
+  workflow_dispatch: # 수동 실행 버튼 활성화
 
 jobs:
-  run-bot:
+  send_briefing:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
-      - name: 저장소 코드 가져오기
-        uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
-      - name: 파이썬 환경 설정
-        uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: '3.10'
 
-      - name: 필요 라이브러리 설치
+      - name: Install Dependencies
         run: |
-          python -m pip install --upgrade pip
+          pip install requests google-generativeai
 
-      - name: 뉴스 크롤러 실행 및 텔레그램 발송
+      - name: Run Script & Send Telegram
         env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          python main.py
-
-      - name: 발송 및 순환 기록 자동 저장
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add sent_links.txt last_keyword_index.txt || true
-          git commit -m "update history and index [skip ci]" || echo "No changes to commit"
-          git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git HEAD:main
+        run: python main.py
