@@ -2,8 +2,8 @@ name: Daily Stock Briefing Bot
 
 on:
   schedule:
-    # 매일 한국 시간(KST) 오전 07:15 실행 (UTC 기준 전날 22:15)
-    - cron: '15 22 * * *'
+    # 매일 한국 시간(KST) 오전 06:50 실행 (UTC 기준 전날 21:50)
+    - cron: '50 21 * * *'
   workflow_dispatch: # GitHub 웹 UI에서 수동 실행 허용
 
 jobs:
