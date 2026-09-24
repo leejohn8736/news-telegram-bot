@@ -5,16 +5,20 @@ import datetime
 import requests
 from google import genai
 
-# 1. 환경 변수 검증
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+# 1. 환경 변수 검증 + 공백 제거
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+
+print(f"[디버그] GEMINI_API_KEY 존재: {bool(GEMINI_API_KEY)}")
+print(f"[디버그] TELEGRAM_BOT_TOKEN 길이: {len(TELEGRAM_BOT_TOKEN)} / 앞 10자: {TELEGRAM_BOT_TOKEN[:10]}...")
+print(f"[디버그] TELEGRAM_CHAT_ID: {TELEGRAM_CHAT_ID}")
 
 if not all([GEMINI_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID]):
-    print("[오류] GitHub Secrets가 설정되지 않았습니다.")
+    print("[오류] GitHub Secrets 값이 비어있습니다.")
     sys.exit(1)
 
-# 2. 한국 시간 기준 날짜
+# 2. 한국 시간
 now_kst = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=9)
 today_str = now_kst.strftime("%Y년 %m월 %d일")
 weekday_map = {"Mon": "월", "Tue": "화", "Wed": "수", "Thu": "목", "Fri": "금", "Sat": "토", "Sun": "일"}
@@ -39,8 +43,14 @@ prompt = f"""
 7. 글의 가장 마지막 줄에는 반드시 "출처 AI" 라고 적을 것.
 """
 
-# 4. 최신 모델 순차 호출
-candidate_models = ["gemini-3.8-flash", "gemini-3.6-flash"]
+# 4. 모델 순차 시도 (더 많은 폴백)
+candidate_models = [
+    "gemini-3.8-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite"
+]
+
 briefing_text = None
 
 for model_name in candidate_models:
@@ -53,13 +63,13 @@ for model_name in candidate_models:
                 contents=prompt,
             )
             briefing_text = response.text
-            print(f"[{model_name}] 모델 생성 성공!")
+            print(f"[{model_name}] 모델 생성 성공! (길이: {len(briefing_text)}자)")
             break
         except Exception as e:
             print(f"[{model_name}] 시도 {attempt}/3 실패: {e}")
             if attempt < 3:
-                time.sleep(3)
-    
+                time.sleep(5)  # 503 대비 조금 더 기다림
+                
     if briefing_text:
         break
 
@@ -67,38 +77,55 @@ if not briefing_text:
     print("[오류] 모든 모델에서 브리핑 생성이 실패했습니다.")
     sys.exit(1)
 
-# 5. 텔레그램 발송 (4096자 제한 대응 - 자동 분할)
-def send_telegram_message(text: str):
-    telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+# 5. 텔레그램 발송 (안전한 분할 + 상세 에러)
+def send_telegram_message(text: str) -> bool:
+    # 토큰 정리
+    token = TELEGRAM_BOT_TOKEN.strip()
+    chat_id = TELEGRAM_CHAT_ID.strip()
     
-    # 4000자 단위로 분할 (안전하게)
+    telegram_url = f"https://api.telegram.org/bot{token}/sendMessage"
+    
     max_len = 4000
-    chunks = [text[i:i+max_len] for i in range(0, len(text), max_len)]
+    chunks = [text[i:i + max_len] for i in range(0, len(text), max_len)]
+    
+    print(f"[디버그] 총 {len(chunks)}개 메시지로 분할하여 전송합니다.")
     
     for i, chunk in enumerate(chunks, 1):
         payload = {
-            "chat_id": TELEGRAM_CHAT_ID,
+            "chat_id": chat_id,
             "text": chunk,
             "disable_web_page_preview": True
         }
         
         try:
             res = requests.post(telegram_url, json=payload, timeout=30)
+            print(f"[디버그] 메시지 {i} 응답 코드: {res.status_code}")
+            
             if res.status_code == 200:
                 print(f"텔레그램 메시지 {i}/{len(chunks)} 전송 완료")
             else:
-                print(f"[텔레그램 발송 실패] 상태 코드: {res.status_code}, 응답: {res.text}")
+                print(f"[텔레그램 발송 실패] 상태 코드: {res.status_code}")
+                print(f"응답 내용: {res.text}")
+                
+                # 자주 발생하는 원인 안내
+                if res.status_code == 404:
+                    print("→ 404 원인: 봇 토큰이 잘못되었거나, 토큰에 공백/개행이 들어갔습니다.")
+                    print("→ BotFather에서 토큰을 다시 복사해서 Secrets에 넣어주세요.")
+                elif res.status_code == 400:
+                    print("→ 400 원인: chat_id가 잘못되었거나, 봇이 해당 채팅에 접근 권한이 없습니다.")
                 return False
+                
         except Exception as e:
             print(f"[텔레그램 요청 에러] {e}")
             return False
         
         if i < len(chunks):
-            time.sleep(1)  # 연속 전송 시 약간의 딜레이
+            time.sleep(1.2)
             
     return True
 
 if send_telegram_message(briefing_text):
-    print("텔레그램 시황 브리핑 전송 완료!")
+    print("✅ 텔레그램 시황 브리핑 전송 완료!")
 else:
+    print("❌ 텔레그램 전송 실패")
     sys.exit(1)
