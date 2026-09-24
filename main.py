@@ -40,9 +40,9 @@ prompt = f"""
 """
 
 try:
-    # Gemini 최신 모델 호출
+    # 최신 Gemini 3.6 Flash 모델 호출
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3.6-flash",
         contents=prompt,
     )
     briefing_text = response.text
