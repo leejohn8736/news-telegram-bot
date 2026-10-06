@@ -18,9 +18,9 @@ if not all([GEMINI_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID]):
     print("[오류] GitHub Secrets 값이 비어있습니다.")
     sys.exit(1)
 
-# 2. 한국 시간
+# 2. 한국 시간 계산
 now_kst = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=9)
-today_str = now_kst.strftime("%Y년 %m월 %d일")
+today_str = now_kst.strftime("%Y년 %m월 %d일 %H시 %M분")
 weekday_map = {"Mon": "월", "Tue": "화", "Wed": "수", "Thu": "목", "Fri": "금", "Sat": "토", "Sun": "일"}
 weekday_str = weekday_map[now_kst.strftime("%a")]
 date_header = f"{today_str}({weekday_str})"
@@ -29,12 +29,12 @@ date_header = f"{today_str}({weekday_str})"
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 prompt = f"""
-오늘 날짜: {date_header}
+오늘 날짜 및 시각: {date_header}
 당일 증시 심층 분석 브리핑을 작성하라.
 
 [작성 규칙]
 1. 글 시작 전 가장 첫 줄에 오늘 날짜를 적을 것: "{date_header} — 국내외 증시 심층 브리핑"
-2. 밤사이 미국 증시, 매크로·FOMC, 반도체 사이클, 유가·지정학, 정치·외교·통상·산업(대통령 관련 뉴스 포함) 내용을 심층 정리할 것.
+2. 미국 증시, 매크로·FOMC, 반도체 사이클, 유가·지정학, 정치·외교·통상·산업(대통령 관련 뉴스 포함) 내용을 심층 정리할 것.
 3. 🎯 오늘의 핵심 테마 정리를 포함할 것.
 4. 코스피 10개 종목을 1♡ ~ 10♡ 번호 형식으로 적고, 종목명 옆에 테마와 섹터를 표기할 것.
 5. 코스닥 10개 종목을 1♡ ~ 10♡ 번호 형식으로 적고, 종목명 옆에 테마와 섹터를 표기할 것.
@@ -43,19 +43,17 @@ prompt = f"""
 7. 글의 가장 마지막 줄에는 반드시 "출처 AI" 라고 적을 것.
 """
 
-# 4. 모델 순차 시도 (더 많은 폴백)
+# 4. 모델 순차 시도 (정식 모델 지원)
 candidate_models = [
-    "gemini-3.8-flash",
-    "gemini-3.6-flash",
-    "gemini-3.5-flash",
-    "gemini-3.5-flash-lite"
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash"
 ]
 
 briefing_text = None
 
 for model_name in candidate_models:
     print(f"[{model_name}] 모델로 브리핑 생성 시도 중...")
-    
     for attempt in range(1, 4):
         try:
             response = client.models.generate_content(
@@ -68,7 +66,7 @@ for model_name in candidate_models:
         except Exception as e:
             print(f"[{model_name}] 시도 {attempt}/3 실패: {e}")
             if attempt < 3:
-                time.sleep(5)  # 503 대비 조금 더 기다림
+                time.sleep(5)
                 
     if briefing_text:
         break
@@ -77,9 +75,8 @@ if not briefing_text:
     print("[오류] 모든 모델에서 브리핑 생성이 실패했습니다.")
     sys.exit(1)
 
-# 5. 텔레그램 발송 (안전한 분할 + 상세 에러)
+# 5. 텔레그램 발송 (안전한 분할)
 def send_telegram_message(text: str) -> bool:
-    # 토큰 정리
     token = TELEGRAM_BOT_TOKEN.strip()
     chat_id = TELEGRAM_CHAT_ID.strip()
     
@@ -106,13 +103,6 @@ def send_telegram_message(text: str) -> bool:
             else:
                 print(f"[텔레그램 발송 실패] 상태 코드: {res.status_code}")
                 print(f"응답 내용: {res.text}")
-                
-                # 자주 발생하는 원인 안내
-                if res.status_code == 404:
-                    print("→ 404 원인: 봇 토큰이 잘못되었거나, 토큰에 공백/개행이 들어갔습니다.")
-                    print("→ BotFather에서 토큰을 다시 복사해서 Secrets에 넣어주세요.")
-                elif res.status_code == 400:
-                    print("→ 400 원인: chat_id가 잘못되었거나, 봇이 해당 채팅에 접근 권한이 없습니다.")
                 return False
                 
         except Exception as e:
