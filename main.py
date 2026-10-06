@@ -43,11 +43,12 @@ prompt = f"""
 7. 글의 가장 마지막 줄에는 반드시 "출처 AI" 라고 적을 것.
 """
 
-# 4. 모델 순차 시도 (정식 모델 지원)
+# 4. 모델 순차 시도 (최신 Gemini 3 계열 모델로 업데이트)
 candidate_models = [
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash"
+    "gemini-3.8-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite"
 ]
 
 briefing_text = None
